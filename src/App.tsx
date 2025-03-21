@@ -1,16 +1,37 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AccountEntry, Report } from './types';
 import { ReportInput } from './components/ReportInput';
 import { ReportSummary } from './components/ReportSummary';
-import { processReport } from './utils/accountingUtils';
+import { processTrialBalance, loadCategoryOptions } from './utils/accountingUtils';
 import { FileSpreadsheet } from 'lucide-react';
 
 function App() {
   const [report, setReport] = useState<Report | null>(null);
+  const [categories, setCategories] = useState<any[]>([]); // Added state for categories
+
+  useEffect(() => {
+    console.log("🟢 App is running. Please upload the required files.");
+  }, []);
 
   const handleReportSubmit = (entries: AccountEntry[]) => {
-    const processedReport = processReport(entries);
+    const processedReport = processTrialBalance(entries);
     setReport(processedReport);
+  };
+
+  const handleCategoryFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files?.length) {
+      const file = event.target.files[0];
+      console.log("📂 Uploading Category Options file:", file.name);
+
+      // Load the categories and update the state after they are loaded
+      loadCategoryOptions(file)
+        .then((loadedCategories) => {
+          setCategories(loadedCategories); // Update categories after loading
+        })
+        .catch((error) => {
+          console.error('❌ Error loading category options:', error);
+        });
+    }
   };
 
   return (
@@ -24,15 +45,26 @@ function App() {
             </h1>
           </div>
           <p className="text-gray-600 max-w-2xl mx-auto">
-            Convert your accounting reports into a standardized format. Simply paste your
-            data in CSV format (Account Name, Amount) and we'll categorize it into
-            Assets, Equity, Revenue, and Costs.
+            Convert your accounting reports into a standardized format. Simply upload your
+            trial balance, and we'll categorize it into Account Type, Primary, Secondary,
+            and Tertiary Classifications.
           </p>
         </div>
 
         <div className="flex flex-col items-center gap-8">
+          {/* Upload Category Options File */}
+          <div className="w-full max-w-md text-center">
+            <label className="block text-sm font-medium text-gray-700">Upload Category Options</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={handleCategoryFileUpload}
+              className="mt-2 p-2 border rounded-lg w-full"
+            />
+          </div>
+
           <ReportInput onSubmit={handleReportSubmit} />
-          {report && <ReportSummary report={report} />}
+          {report && <ReportSummary report={report} categories={categories} />} {/* Pass categories to ReportSummary */}
         </div>
       </div>
     </div>
