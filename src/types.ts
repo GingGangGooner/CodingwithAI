@@ -9,7 +9,7 @@ export type AccountType =
   | 'Uncategorized';
 
 export interface AccountEntry {
-  name: string;
+  account: string;
   debit: number;
   credit: number;
   accountType: AccountType;

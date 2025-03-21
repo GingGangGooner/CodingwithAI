@@ -55,7 +55,7 @@ export function ReportSummary({ report, categories }: { report: Report; categori
     };
 
     entries.forEach((entry) => {
-      if (entry.name.toLowerCase() !== "total") {
+      if (entry.account.toLowerCase() !== "total") {
         const key = entry.accountType as keyof TotalsByType;
         newTotals[key].debit += entry.debit;
         newTotals[key].credit += entry.credit;
@@ -109,10 +109,10 @@ export function ReportSummary({ report, categories }: { report: Report; categori
           </thead>
           <tbody>
             {editedEntries.map((entry, index) => {
-              const isTotalRow = entry.name.toLowerCase() === "total";
+              const isTotalRow = entry.account.toLowerCase() === "total";
               return (
                 <tr key={index} className="border-t">
-                  <td className="px-4 py-2">{entry.name}</td>
+                  <td className="px-4 py-2">{entry.account}</td>
                   <td className="px-4 py-2 text-right">${entry.debit.toLocaleString()}</td>
                   <td className="px-4 py-2 text-right">${entry.credit.toLocaleString()}</td>
 

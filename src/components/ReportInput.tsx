@@ -79,16 +79,16 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
   
         if (!row || !row[nameColumnIndex]) continue;
   
-        const name = String(row[nameColumnIndex]).trim();
+        const account = String(row[nameColumnIndex]).trim();
         const debit = debitColumnIndex !== -1 && row[debitColumnIndex] ? parseAmount(row[debitColumnIndex]) : 0;
         const credit = creditColumnIndex !== -1 && row[creditColumnIndex] ? parseAmount(row[creditColumnIndex]) : 0;
   
         if (debit === 0 && credit === 0) continue;
   
-        const category = categorizeAccount(name);
+        const category = categorizeAccount(account);
   
         entries.push({
-          name,
+          account,
           debit,
           credit,
           accountType: category.accountType,

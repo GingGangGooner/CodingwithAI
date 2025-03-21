@@ -69,7 +69,7 @@ function createUncategorized() {
 // **4️⃣ Process Trial Balance Data**
 export function processTrialBalance(entries: AccountEntry[]): Report {
   const categorizedEntries = entries.map((entry) => {
-    const category = categorizeAccount(entry.name);
+    const category = categorizeAccount(entry.account);
     return {
       ...entry,
       accountType: category.accountType,
