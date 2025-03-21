@@ -7,10 +7,20 @@ import { FileSpreadsheet } from 'lucide-react';
 
 function App() {
   const [report, setReport] = useState<Report | null>(null);
-  const [categories, setCategories] = useState<any[]>([]); // Added state for categories
+  const [categories, setCategories] = useState<any>({}); // switched to object for category mapping
 
   useEffect(() => {
     console.log("🟢 App is running. Please upload the required files.");
+
+    // Load persisted categories from localStorage
+    const stored = localStorage.getItem("categoryMappings");
+    if (stored) {
+      try {
+        setCategories(JSON.parse(stored));
+      } catch (err) {
+        console.error("⚠️ Failed to parse stored categories");
+      }
+    }
   }, []);
 
   const handleReportSubmit = (entries: AccountEntry[]) => {
@@ -18,19 +28,29 @@ function App() {
     setReport(processedReport);
   };
 
-  const handleCategoryFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files?.length) {
-      const file = event.target.files[0];
-      console.log("📂 Uploading Category Options file:", file.name);
+  const handleCategoryFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.length) return;
 
-      // Load the categories and update the state after they are loaded
-      loadCategoryOptions(file)
-        .then((loadedCategories) => {
-          setCategories(loadedCategories); // Update categories after loading
-        })
-        .catch((error) => {
-          console.error('❌ Error loading category options:', error);
-        });
+    const file = event.target.files[0];
+    console.log("📂 Uploading Category Options file:", file.name);
+
+    try {
+      const loadedCategories = await loadCategoryOptions(file);
+
+      const structured: any = {};
+      for (const { accountType, primary, secondary, tertiary } of loadedCategories) {
+        if (!structured[accountType]) structured[accountType] = {};
+        if (!structured[accountType][primary]) structured[accountType][primary] = {};
+        if (!structured[accountType][primary][secondary]) structured[accountType][primary][secondary] = [];
+        if (!structured[accountType][primary][secondary].includes(tertiary)) {
+          structured[accountType][primary][secondary].push(tertiary);
+        }
+      }
+
+      setCategories(structured);
+      localStorage.setItem("categoryMappings", JSON.stringify(structured));
+    } catch (error) {
+      console.error("❌ Error loading category options:", error);
     }
   };
 
@@ -64,7 +84,7 @@ function App() {
           </div>
 
           <ReportInput onSubmit={handleReportSubmit} />
-          {report && <ReportSummary report={report} categories={categories} />} {/* Pass categories to ReportSummary */}
+          {report && <ReportSummary report={report} categories={categories} />}
         </div>
       </div>
     </div>

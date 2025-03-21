@@ -21,7 +21,13 @@ export async function loadCategoryOptions(file: File): Promise<any[]> {
         const workbook = XLSX.read(data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-        const categoryOptions = XLSX.utils.sheet_to_json(sheet);
+        const categoryOptions = XLSX.utils.sheet_to_json(sheet).map((row: any) => ({
+          accountType: row["account_type"] || "Uncategorized",
+          primary: row["primary_classification"] || "Uncategorized",
+          secondary: row["secondary_classification"] || "Uncategorized",
+          tertiary: row["tertiary_classification"] || "Uncategorized"
+        }));
+        
 
         if (categoryOptions.length === 0) {
           console.error("⚠️ No category options found!");
