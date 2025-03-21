@@ -2,7 +2,7 @@ import { AccountType, AccountEntry, Report } from '../types';
 import * as XLSX from 'xlsx';
 
 let categoryOptions: any[] = [];
-
+//changes
 // **1️⃣ Load Available Categories from "Automa8e Chart of Accounts.xlsx"**
 export async function loadCategoryOptions(file: File): Promise<any[]> {
   return new Promise((resolve, reject) => {
