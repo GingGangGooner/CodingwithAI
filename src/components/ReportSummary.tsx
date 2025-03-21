@@ -1,74 +1,202 @@
-import React from 'react';
-import { Report, AccountType } from '../types';
-import { PieChart, DollarSign, BarChart2 } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { Report, AccountEntry } from "../types";
+import { FileDown } from "lucide-react";
+import { exportToExcel } from "../utils/accountingUtils";
 
-interface ReportSummaryProps {
-  report: Report;
+// Define a fixed type for the totals, ensuring all expected categories are included
+interface TotalsByType {
+  Asset: { debit: number; credit: number };
+  Liability: { debit: number; credit: number };
+  Equity: { debit: number; credit: number };
+  "Revenue/Income": { debit: number; credit: number };
+  "Cost/Expense": { debit: number; credit: number };
+  Uncategorized: { debit: number; credit: number };
 }
 
-const typeColors: Record<AccountType, string> = {
-  Asset: 'bg-emerald-100 text-emerald-800',
-  Equity: 'bg-blue-100 text-blue-800',
-  Revenue: 'bg-purple-100 text-purple-800',
-  Cost: 'bg-red-100 text-red-800'
+const typeColors: Record<string, string> = {
+  Asset: "bg-emerald-900 text-white",
+  Liability: "bg-yellow-600 text-white",
+  Equity: "bg-blue-800 text-white",
+  "Revenue/Income": "bg-purple-800 text-white",
+  "Cost/Expense": "bg-red-800 text-white",
+  Uncategorized: "bg-gray-800 text-white",
 };
 
-export function ReportSummary({ report }: ReportSummaryProps) {
-  const total = Object.values(report.totalsByType).reduce((sum, val) => sum + val, 0);
+export function ReportSummary({ report, categories }: { report: Report; categories: any[] }) {
+  const [editedEntries, setEditedEntries] = useState(report.entries);
+  
+  // Initialize with default values for each account type
+  const [totalsByType, setTotalsByType] = useState<TotalsByType>({
+    Asset: { debit: 0, credit: 0 },
+    Liability: { debit: 0, credit: 0 },
+    Equity: { debit: 0, credit: 0 },
+    "Revenue/Income": { debit: 0, credit: 0 },
+    "Cost/Expense": { debit: 0, credit: 0 },
+    Uncategorized: { debit: 0, credit: 0 },
+  });
+
+  // 🛠 Handle dropdown change
+  const handleCategoryChange = (index: number, field: keyof AccountEntry, value: string) => {
+    const updatedEntries = [...editedEntries];
+    updatedEntries[index] = { ...updatedEntries[index], [field]: value };
+    setEditedEntries(updatedEntries);
+    updateTotals(updatedEntries);
+  };
+
+  // 🛠 Update totals dynamically when dropdowns are changed
+  const updateTotals = (entries: AccountEntry[]) => {
+    const newTotals: TotalsByType = {
+      Asset: { debit: 0, credit: 0 },
+      Liability: { debit: 0, credit: 0 },
+      Equity: { debit: 0, credit: 0 },
+      "Revenue/Income": { debit: 0, credit: 0 },
+      "Cost/Expense": { debit: 0, credit: 0 },
+      Uncategorized: { debit: 0, credit: 0 },
+    };
+
+    entries.forEach((entry) => {
+      if (entry.account.toLowerCase() !== "total") {
+        const key = entry.accountType as keyof TotalsByType;
+        newTotals[key].debit += entry.debit;
+        newTotals[key].credit += entry.credit;
+      }
+    });
+
+    setTotalsByType(newTotals);
+  };
+
+  useEffect(() => {
+    updateTotals(editedEntries);
+  }, [editedEntries]);
 
   return (
-    <div className="w-full max-w-2xl p-6 bg-white rounded-lg shadow-md">
-      <div className="flex items-center gap-2 mb-6">
-        <BarChart2 className="w-5 h-5 text-blue-600" />
-        <h2 className="text-xl font-semibold">Report Summary</h2>
+    <div className="w-full max-w-6xl p-6 bg-white rounded-lg shadow-md overflow-visible">
+      <h2 className="text-xl font-semibold mb-4">Report Summary</h2>
+
+      {/* 🔢 Categorized Totals */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        {Object.entries(totalsByType).map(([type, totals]) => {
+          const totalSum = totals.debit - totals.credit;
+          return (
+            <div key={type} className={`p-4 rounded-lg ${typeColors[type]}`}>
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{type}</span>
+              </div>
+              <div className="mt-2 text-lg font-bold">
+                $ {(totals.debit ?? 0).toLocaleString()} / $ {(totals.credit ?? 0).toLocaleString()}
+              </div>
+              <div className="mt-2 text-xl font-bold">
+                Total: ${((totals.debit ?? 0) - (totals.credit ?? 0)).toLocaleString()}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        {Object.entries(report.totalsByType).map(([type, amount]) => (
-          <div
-            key={type}
-            className={`p-4 rounded-lg ${typeColors[type as AccountType]}`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{type}</span>
-              <DollarSign className="w-4 h-4" />
-            </div>
-            <div className="mt-2 text-xl font-bold">
-              ${amount.toLocaleString()}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6">
-        <h3 className="text-lg font-semibold mb-4">Detailed Entries</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="px-4 py-2 text-left">Account</th>
-                <th className="px-4 py-2 text-left">Type</th>
-                <th className="px-4 py-2 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.entries.map((entry, index) => (
+      {/* 🔹 Table */}
+      <div className="w-full">
+        <table className="w-full border-collapse border border-gray-300">
+          <thead>
+            <tr className="bg-gray-50 border">
+              <th className="px-4 py-2 text-left">Account</th>
+              <th className="px-4 py-2 text-right">Debit</th>
+              <th className="px-4 py-2 text-right">Credit</th>
+              <th className="px-4 py-2 text-left">Type</th>
+              <th className="px-4 py-2 text-left">Primary</th>
+              <th className="px-4 py-2 text-left">Secondary</th>
+              <th className="px-4 py-2 text-left">Tertiary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {editedEntries.map((entry, index) => {
+              const isTotalRow = entry.account.toLowerCase() === "total";
+              return (
                 <tr key={index} className="border-t">
-                  <td className="px-4 py-2">{entry.name}</td>
+                  <td className="px-4 py-2">{entry.account}</td>
+                  <td className="px-4 py-2 text-right">${entry.debit.toLocaleString()}</td>
+                  <td className="px-4 py-2 text-right">${entry.credit.toLocaleString()}</td>
+
+                  {/* If this is the "Total" row, show plain text instead of dropdowns */}
                   <td className="px-4 py-2">
-                    <span className={`px-2 py-1 rounded-full text-sm ${typeColors[entry.type]}`}>
-                      {entry.type}
-                    </span>
+                    {isTotalRow ? (
+                      <span className="text-gray-500">-</span>
+                    ) : (
+                      <select
+                        value={entry.accountType}
+                        onChange={(e) => handleCategoryChange(index, "accountType", e.target.value)}
+                        className="border rounded px-2 py-1 w-full"
+                      >
+                        <option value="Asset">Asset</option>
+                        <option value="Liability">Liability</option>
+                        <option value="Equity">Equity</option>
+                        <option value="Revenue/Income">Revenue/Income</option>
+                        <option value="Cost/Expense">Cost/Expense</option>
+                        <option value="Uncategorized">Uncategorized</option>
+                      </select>
+                    )}
                   </td>
-                  <td className="px-4 py-2 text-right">
-                    ${entry.amount.toLocaleString()}
+                  <td className="px-4 py-2">
+                    {isTotalRow ? (
+                      <span className="text-gray-500">-</span>
+                    ) : (
+                      <select
+                        value={entry.primaryClassification}
+                        onChange={(e) => handleCategoryChange(index, "primaryClassification", e.target.value)}
+                        className="border rounded px-2 py-1 w-full"
+                      >
+                        <option value="Uncategorized">Uncategorized</option>
+                        {categories.map((c, i) => (
+                          <option key={i} value={c.primary}>{c.primary}</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    {isTotalRow ? (
+                      <span className="text-gray-500">-</span>
+                    ) : (
+                      <select
+                        value={entry.secondaryClassification}
+                        onChange={(e) => handleCategoryChange(index, "secondaryClassification", e.target.value)}
+                        className="border rounded px-2 py-1 w-full"
+                      >
+                        <option value="Uncategorized">Uncategorized</option>
+                        {categories.map((c, i) => (
+                          <option key={i} value={c.secondary}>{c.secondary}</option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    {isTotalRow ? (
+                      <span className="text-gray-500">-</span>
+                    ) : (
+                      <select
+                        value={entry.tertiaryClassification}
+                        onChange={(e) => handleCategoryChange(index, "tertiaryClassification", e.target.value)}
+                        className="border rounded px-2 py-1 w-full"
+                      >
+                        <option value="Uncategorized">Uncategorized</option>
+                        {categories.map((c, i) => (
+                          <option key={i} value={c.tertiary}>{c.tertiary}</option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+
+      {/* 📥 Export Button */}
+      <button
+        onClick={() => exportToExcel(editedEntries, "Processed_Trial_Balance")}
+        className="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center gap-2 hover:bg-blue-700 transition mt-4"
+      >
+        <FileDown className="w-4 h-4" /> Export to Excel
+      </button>
     </div>
   );
 }
