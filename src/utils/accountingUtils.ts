@@ -55,7 +55,6 @@ export async function categorizeAccount(accountName: string): Promise<any> {
     return createUncategorized();
   }
 
-  // Skip categorization for total rows
   if (accountName.toLowerCase() === 'total') {
     return createUncategorized();
   }
@@ -66,25 +65,51 @@ export async function categorizeAccount(accountName: string): Promise<any> {
       return createUncategorized();
     }
 
-    const response = await axios.post('http://localhost:5000/categorize', {
-      account_name: accountName,
-      categories: categoryOptions
-    }, {
-      timeout: 5000, // 5 second timeout
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      }
-    });
+    const maxRetries = 3;
+    const baseDelay = 1000; // Start with 1 second delay
+    let lastError = null;
 
-    if (!response.data) {
-      console.warn(`⚠️ No categorization data received for "${accountName}"`);
-      return createUncategorized();
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await axios.post('http://127.0.0.1:5000/categorize', {
+          account_name: accountName,
+          categories: categoryOptions
+        }, {
+          timeout: 60000, // 60 second timeout
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+
+        if (!response.data) {
+          throw new Error('No data received from server');
+        }
+
+        const result = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+        
+        if (!result.accountType || !result.primary || !result.secondary || !result.tertiary) {
+          throw new Error('Invalid categorization data received');
+        }
+
+        console.log(`✅ Successfully categorized "${accountName}":`, result);
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxRetries - 1) {
+          const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+          console.warn(`⚠️ Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
 
-    return response.data;
+    throw lastError || new Error('All categorization attempts failed');
   } catch (error) {
-    console.error(`❌ Error categorizing account "${accountName}":`, error);
+    console.error(`❌ Error categorizing account "${accountName}":`, {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      name: error instanceof Error ? error.name : 'Error'
+    });
     return createUncategorized();
   }
 }
@@ -98,20 +123,25 @@ function createUncategorized() {
   };
 }
 
-export function processTrialBalance(entries: AccountEntry[]): Promise<Report> {
+export async function processTrialBalance(entries: AccountEntry[]): Promise<Report> {
   return new Promise(async (resolve) => {
+    console.log("🔄 Starting trial balance processing...");
+    
     const categorizedEntries = await Promise.all(entries.map(async (entry) => {
+      console.log(`📝 Processing entry: ${entry.account}`);
       const category = await categorizeAccount(entry.account);
+      console.log(`✅ Category result for ${entry.account}:`, category);
+      
       return {
         ...entry,
-        accountType: category.accountType,
+        accountType: category.accountType as AccountType,
         primaryClassification: category.primary,
         secondaryClassification: category.secondary,
         tertiaryClassification: category.tertiary
       };
     }));
 
-    console.log("📝 Processed Trial Balance:", categorizedEntries);
+    console.log("📊 Processed Trial Balance:", categorizedEntries);
 
     const totalsByType: Record<AccountType, { debit: number; credit: number }> = {
       Asset: { debit: 0, credit: 0 },
