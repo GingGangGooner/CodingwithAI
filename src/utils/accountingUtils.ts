@@ -1,9 +1,9 @@
 import { AccountType, AccountEntry, Report } from '../types';
 import * as XLSX from 'xlsx';
+import axios from 'axios';
 
 let categoryOptions: any[] = [];
-//changes
-// **1️⃣ Load Available Categories from "Automa8e Chart of Accounts.xlsx"**
+
 export async function loadCategoryOptions(file: File): Promise<any[]> {
   return new Promise((resolve, reject) => {
     try {
@@ -21,48 +21,74 @@ export async function loadCategoryOptions(file: File): Promise<any[]> {
         const workbook = XLSX.read(data, { type: "array" });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-        const categoryOptions = XLSX.utils.sheet_to_json(sheet).map((row: any) => ({
+        categoryOptions = XLSX.utils.sheet_to_json(sheet).map((row: any) => ({
           accountType: row["account_type"] || "Uncategorized",
           primary: row["primary_classification"] || "Uncategorized",
           secondary: row["secondary_classification"] || "Uncategorized",
           tertiary: row["tertiary_classification"] || "Uncategorized"
         }));
         
-
         if (categoryOptions.length === 0) {
           console.error("⚠️ No category options found!");
           reject(new Error("No category options found in the file"));
         } else {
           console.log(`✅ Loaded ${categoryOptions.length} category entries`);
-          resolve(categoryOptions); // Resolve the promise with the loaded categories
+          resolve(categoryOptions);
         }
       };
 
       reader.onerror = (error) => {
-        reject(error); // Reject the promise if there's a file reading error
+        reject(error);
       };
 
-      reader.readAsArrayBuffer(file); // Trigger the file reader to start reading
+      reader.readAsArrayBuffer(file);
     } catch (error) {
       console.error("❌ Failed to load category options:", error);
-      reject(error); // Reject the promise if there's a general error
+      reject(error);
     }
   });
 }
 
-
-// **2️⃣ Categorize Accounts Without Chart of Accounts**
-export function categorizeAccount(accountName: string): any {
+export async function categorizeAccount(accountName: string): Promise<any> {
   if (!accountName || typeof accountName !== 'string' || accountName.trim() === '') {
     console.warn(`⚠️ Skipping empty account name.`);
     return createUncategorized();
   }
 
-  console.warn(`⚠️ No predefined categories found for "${accountName}"`);
-  return createUncategorized();
+  // Skip categorization for total rows
+  if (accountName.toLowerCase() === 'total') {
+    return createUncategorized();
+  }
+
+  try {
+    if (categoryOptions.length === 0) {
+      console.warn("⚠️ No category options available");
+      return createUncategorized();
+    }
+
+    const response = await axios.post('http://localhost:5000/categorize', {
+      account_name: accountName,
+      categories: categoryOptions
+    }, {
+      timeout: 5000, // 5 second timeout
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.data) {
+      console.warn(`⚠️ No categorization data received for "${accountName}"`);
+      return createUncategorized();
+    }
+
+    return response.data;
+  } catch (error) {
+    console.error(`❌ Error categorizing account "${accountName}":`, error);
+    return createUncategorized();
+  }
 }
 
-// **3️⃣ Helper Function to Return "Uncategorized" Entries**
 function createUncategorized() {
   return {
     accountType: 'Uncategorized',
@@ -72,45 +98,45 @@ function createUncategorized() {
   };
 }
 
-// **4️⃣ Process Trial Balance Data**
-export function processTrialBalance(entries: AccountEntry[]): Report {
-  const categorizedEntries = entries.map((entry) => {
-    const category = categorizeAccount(entry.account);
-    return {
-      ...entry,
-      accountType: category.accountType,
-      primaryClassification: category.primary,
-      secondaryClassification: category.secondary,
-      tertiaryClassification: category.tertiary
+export function processTrialBalance(entries: AccountEntry[]): Promise<Report> {
+  return new Promise(async (resolve) => {
+    const categorizedEntries = await Promise.all(entries.map(async (entry) => {
+      const category = await categorizeAccount(entry.account);
+      return {
+        ...entry,
+        accountType: category.accountType,
+        primaryClassification: category.primary,
+        secondaryClassification: category.secondary,
+        tertiaryClassification: category.tertiary
+      };
+    }));
+
+    console.log("📝 Processed Trial Balance:", categorizedEntries);
+
+    const totalsByType: Record<AccountType, { debit: number; credit: number }> = {
+      Asset: { debit: 0, credit: 0 },
+      Liability: { debit: 0, credit: 0 },
+      Equity: { debit: 0, credit: 0 },
+      "Revenue/Income": { debit: 0, credit: 0 },
+      "Cost/Expense": { debit: 0, credit: 0 },
+      Uncategorized: { debit: 0, credit: 0 }
     };
+
+    categorizedEntries.forEach((entry) => {
+      const key = entry.accountType as keyof typeof totalsByType;
+      if (key in totalsByType) {
+        totalsByType[key].debit += entry.debit;
+        totalsByType[key].credit += entry.credit;
+      }
+    });
+
+    resolve({
+      entries: categorizedEntries,
+      totalsByType
+    });
   });
-
-  console.log("📝 Processed Trial Balance:", categorizedEntries);
-
-  const totalsByType: Record<AccountType, { debit: number; credit: number }> = {
-    Asset: { debit: 0, credit: 0 },
-    Liability: { debit: 0, credit: 0 },
-    Equity: { debit: 0, credit: 0 },
-    "Revenue/Income": { debit: 0, credit: 0 },
-    "Cost/Expense": { debit: 0, credit: 0 },
-    Uncategorized: { debit: 0, credit: 0 }
-  };
-
-  categorizedEntries.forEach((entry) => {
-    const key = entry.accountType as keyof typeof totalsByType;
-    if (key in totalsByType) {
-      totalsByType[key].debit += entry.debit;
-      totalsByType[key].credit += entry.credit;
-    }
-  });
-
-  return {
-    entries: categorizedEntries,
-    totalsByType
-  };
 }
 
-// **5️⃣ Export Processed Trial Balance to Excel**
 export function exportToExcel(data: any[], fileName: string) {
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();

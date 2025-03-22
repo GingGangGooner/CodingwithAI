@@ -11,6 +11,7 @@ interface ReportInputProps {
 export function ReportInput({ onSubmit }: ReportInputProps) {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseAmount = (value: any): number => {
@@ -29,8 +30,9 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
     return number;
   };
 
-  const processFileData = (data: any[][]) => {
+  const processFileData = async (data: any[][]) => {
     try {
+      setProcessing(true);
       if (!Array.isArray(data) || data.length < 2) {
         throw new Error("File must contain at least a header row and one data row");
       }
@@ -38,7 +40,6 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
       let headerRow: string[] | null = null;
       let headerRowIndex = -1;
   
-      // 🔍 Scan the first few rows to find the actual headers
       for (let i = 0; i < Math.min(10, data.length); i++) { 
         const row = data[i].map(cell => String(cell || '').trim().toLowerCase().replace(/\s+/g, ' '));
   
@@ -55,13 +56,12 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
   
       console.log("✅ Detected header row:", headerRow, "at row index:", headerRowIndex);
   
-      // Find column indices
       let nameColumnIndex = headerRow.findIndex(header => header.includes('account name'));
       if (nameColumnIndex === -1) {
         nameColumnIndex = headerRow.findIndex(header => header.includes('account'));
       }
       if (nameColumnIndex === -1) {
-        nameColumnIndex = 0; // Fallback to first column
+        nameColumnIndex = 0;
       }
   
       let debitColumnIndex = headerRow.findIndex(header => header.includes('debit'));
@@ -73,7 +73,6 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
   
       const entries: AccountEntry[] = [];
   
-      // 📊 Process data starting from the detected header row
       for (let i = headerRowIndex + 1; i < data.length; i++) {
         const row = data[i];
   
@@ -85,7 +84,7 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
   
         if (debit === 0 && credit === 0) continue;
   
-        const category = categorizeAccount(account);
+        const category = await categorizeAccount(account);
   
         entries.push({
           account,
@@ -105,9 +104,10 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
       onSubmit(entries);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to process file data");
+    } finally {
+      setProcessing(false);
     }
   };
-  
 
   const handleFileUpload = async (file: File) => {
     try {
@@ -123,7 +123,7 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData: any[][] = utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: null });
 
-      processFileData(jsonData as any[][]);
+      await processFileData(jsonData as any[][]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to read file');
     }
@@ -158,11 +158,14 @@ export function ReportInput({ onSubmit }: ReportInputProps) {
         <button
           onClick={() => fileInputRef.current?.click()}
           className="text-blue-600 hover:text-blue-700 font-medium"
+          disabled={processing}
         >
           browse to upload
         </button>
         {fileName && !error && (
-          <p className="mt-2 text-sm text-green-600">Processing file: {fileName}</p>
+          <p className="mt-2 text-sm text-green-600">
+            {processing ? "Processing file..." : `Processing complete: ${fileName}`}
+          </p>
         )}
       </div>
     </div>

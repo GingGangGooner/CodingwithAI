@@ -7,12 +7,12 @@ import { FileSpreadsheet } from 'lucide-react';
 
 function App() {
   const [report, setReport] = useState<Report | null>(null);
-  const [categories, setCategories] = useState<any>({}); // switched to object for category mapping
+  const [categories, setCategories] = useState<any>({}); 
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     console.log("🟢 App is running. Please upload the required files.");
 
-    // Load persisted categories from localStorage
     const stored = localStorage.getItem("categoryMappings");
     if (stored) {
       try {
@@ -23,9 +23,16 @@ function App() {
     }
   }, []);
 
-  const handleReportSubmit = (entries: AccountEntry[]) => {
-    const processedReport = processTrialBalance(entries);
-    setReport(processedReport);
+  const handleReportSubmit = async (entries: AccountEntry[]) => {
+    setIsProcessing(true);
+    try {
+      const processedReport = await processTrialBalance(entries);
+      setReport(processedReport);
+    } catch (error) {
+      console.error("Error processing report:", error);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleCategoryFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -72,7 +79,6 @@ function App() {
         </div>
 
         <div className="flex flex-col items-center gap-8">
-          {/* Upload Category Options File */}
           <div className="w-full max-w-md text-center">
             <label className="block text-sm font-medium text-gray-700">Upload Category Options</label>
             <input
@@ -80,6 +86,7 @@ function App() {
               accept=".xlsx"
               onChange={handleCategoryFileUpload}
               className="mt-2 p-2 border rounded-lg w-full"
+              disabled={isProcessing}
             />
           </div>
 
