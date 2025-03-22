@@ -8,3 +8,4 @@ npm install concurrently --legacy-peer-deps
 .venv\Scripts\activate
 
 npm run dev
+
