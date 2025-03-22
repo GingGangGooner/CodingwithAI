@@ -10,3 +10,4 @@ pip install flask flask-cors transformers torch
 .venv\Scripts\activate
 
 npm run dev
+
