@@ -1,10 +1,16 @@
-# start-backend.ps1
+Write-Host "Starting backend..."
 
-# Activate virtual environment
+# Check if .venv exists, if not, create it
+if (-Not (Test-Path ".\.venv")) {
+    Write-Host "Creating Python virtual environment..."
+    python -m venv .venv
+}
+
+# Activate the virtual environment
 . .\.venv\Scripts\Activate.ps1
 
-# Install requirements (optional but safe)
+# Install dependencies inside the virtual environment
 pip install -r requirements.txt
 
-# Run Flask server
-python src/server.py
+# Start the Flask backend
+python ./src/server.py
