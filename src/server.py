@@ -18,7 +18,12 @@ from python.categorizer import handle_categorization
 app = Flask(__name__)
 CORS(app, resources={
     r"/categorize": {
-        "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+        "origins": [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174"
+        ],
         "methods": ["POST"],
         "allow_headers": ["Content-Type", "Accept"],
         "max_age": 3600
