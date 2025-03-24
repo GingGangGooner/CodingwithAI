@@ -1,6 +1,7 @@
 from transformers import pipeline
 import json
 import logging
+import torch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -51,57 +52,112 @@ def get_default_classification(account_name):
     
     return 'Uncategorized', 'Uncategorized'
 
+device = 0 if torch.cuda.is_available() else -1  # 0 = first GPU, -1 = CPU fallback
+
+classifier = pipeline(
+    "zero-shot-classification",
+    model="MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+    # 1. More precise logic and fine-tuning across multiple NLI datasets
+    # "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+
+    # 2. Strong multilingual + financial reasoning
+    # "joeddav/xlm-roberta-large-xnli"
+
+    # 3. Lightweight and very fast (less accurate)
+    # "valhalla/distilbart-mnli-12-1"
+
+    # 4. Generic fallback for older systems
+    # "facebook/bart-large-mnli"
+
+    device=device
+)
+
+
+
 def categorize_account(account_name, categories_data):
     try:
-        # Check default classification first
-        primary, secondary = get_default_classification(account_name)
-        tertiary = 'Uncategorized'  # Default tertiary category if no other classification
+        categories = load_categories(categories_data)
 
-        # If default classification is found, skip LLM classification
-        if primary != 'Uncategorized':
-            logger.info(f"Using default classification: {primary} | {secondary} | {tertiary}")
+        # Try fast classification for accountType and primary
+        account_type, primary = get_default_classification(account_name)
+
+        # If fast path worked, only LLM classify secondary and tertiary
+        if account_type != 'Uncategorized':
+            secondary_labels = list(categories.get(account_type, {}).get(primary, {}).keys())
+            secondary = "Uncategorized"
+            tertiary = "Uncategorized"
+
+            if secondary_labels:
+                step3_input = f"{account_name} | Type: {account_type} | Primary: {primary}"
+                step3 = classifier(step3_input, candidate_labels=secondary_labels)
+                secondary = step3["labels"][0]
+
+                tertiary_labels = categories[account_type][primary][secondary]
+                if tertiary_labels:
+                    step4_input = f"{account_name} | Type: {account_type} | Primary: {primary} | Secondary: {secondary}"
+                    step4 = classifier(step4_input, candidate_labels=tertiary_labels)
+                    tertiary = step4["labels"][0]
+
             return {
-                'accountType': primary,
-                'primary': primary,
-                'secondary': secondary,
-                'tertiary': tertiary
+                "accountType": account_type,
+                "primary": primary,
+                "secondary": secondary,
+                "tertiary": tertiary
             }
 
-        # If no default classification, continue with LLM classification
-        classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
-        
-        # Load and structure categories
-        categories = load_categories(categories_data)
-        
-        # Create the prompt
-        prompt = create_prompt(account_name, categories)
-        
-        logger.info(f"\n🧾 Prompt:\n{prompt}\n")
+        # If no match, proceed with full LLM classification
+        # Step 1: Account Type
+        account_type_labels = list(categories.keys())
+        step1 = classifier(account_name, candidate_labels=account_type_labels)
+        account_type = step1["labels"][0]
 
-        candidate_labels = ['Revenue/income', 'Cost/Expense', 'Asset', 'Liability', 'Equity']
-        result = classifier(prompt, candidate_labels=candidate_labels)
-        logger.info(f"🧠 Model output:\n{result}\n")
+        # Step 2: Primary Category
+        primary_labels = list(categories[account_type].keys())
+        step2_input = f"{account_name} | Type: {account_type}"
+        step2 = classifier(step2_input, candidate_labels=primary_labels)
+        primary = step2["labels"][0]
 
-        # Get the primary label from the result
-        account_type = result['labels'][0]  # This is the label the LLM assigned for categorization
+        # Step 3: Secondary Category
+        secondary_labels = list(categories[account_type][primary].keys())
+        step3_input = f"{account_name} | Type: {account_type} | Primary: {primary}"
+        step3 = classifier(step3_input, candidate_labels=secondary_labels)
+        secondary = step3["labels"][0]
 
-        # Default classifications for secondary and tertiary if no valid categories are found
-        secondary, tertiary = 'Uncategorized', 'Uncategorized'
+        # Step 4: Tertiary Category
+        tertiary_labels = categories[account_type][primary][secondary]
+        step4_input = f"{account_name} | Type: {account_type} | Primary: {primary} | Secondary: {secondary}"
+        step4 = classifier(step4_input, candidate_labels=tertiary_labels)
+        tertiary = step4["labels"][0]
 
-        # Check structured categories to assign secondary and tertiary classifications
-        if account_type in categories:
-            for primary_category, secondary_categories in categories[account_type].items():
-                if primary_category == account_type:  # LLM assigns the category based on account_type
-                    primary = primary_category  # Primary category determined by the LLM
-                    secondary = next(iter(secondary_categories.keys()), 'Uncategorized')  # First secondary category
-                    tertiary = next(iter(secondary_categories[secondary]), 'Uncategorized')  # First tertiary category
-
-        output = {
-            'accountType': account_type,
-            'primary': primary,
-            'secondary': secondary,
-            'tertiary': tertiary
+        return {
+            "accountType": account_type,
+            "primary": primary,
+            "secondary": secondary,
+            "tertiary": tertiary
         }
+
+    except Exception as e:
+        logging.error(f"❌ Error categorizing '{account_name}': {str(e)}")
+        return {
+            "accountType": "Uncategorized",
+            "primary": "Uncategorized",
+            "secondary": "Uncategorized",
+            "tertiary": "Uncategorized"
+        }
+
+
+        logger.info(f"✅ Hierarchical categorization result: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ Error during categorization: {str(e)}")
+        return {
+            "accountType": "Uncategorized",
+            "primary": "Uncategorized",
+            "secondary": "Uncategorized",
+            "tertiary": "Uncategorized"
+        }
+
 
         logger.info(f"✅ Categorization result: {output}\n")
         return output
